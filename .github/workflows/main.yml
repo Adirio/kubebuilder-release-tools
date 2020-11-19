@@ -10,7 +10,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Print ENV and triggering event
-        uses: hmarr/debug-action@v1
+        uses: hmarr/debug-action@v1.0.0
 
   verify:
     name: Verify PR contents
