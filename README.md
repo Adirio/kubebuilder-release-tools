@@ -1,4 +1,4 @@
-# Kubebuilder Release Tools
+# Kubebuilder Release Tools (forked)
 
 Release tooling for KubeBuilder projects.
 
