@@ -29,3 +29,4 @@ jobs:
         uses: ./.github/actions/verifier
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
+          suffix: (${{ github.event.pull_request.head.repo.full_name }}:${{ github.head_ref }})
