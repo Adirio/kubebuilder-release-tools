@@ -102,7 +102,7 @@ func (p PRPlugin) createCheckRun(client *github.Client, owner, repo, headSHA str
 		},
 	)
 	if err != nil {
-		return nil, fmt.Errorf("unable to submit check result: %w", err)
+		return nil, fmt.Errorf("unable to create check run: %w", err)
 	}
 
 	p.debugf("create check API response: %+v", res)
@@ -126,7 +126,7 @@ func (p PRPlugin) getCheckRun(client *github.Client, owner, repo, headSHA string
 		},
 	)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("unable to list check runs: %w", err)
 	}
 
 	p.debugf("list check API response: %+v", res)
@@ -138,9 +138,11 @@ func (p PRPlugin) getCheckRun(client *github.Client, owner, repo, headSHA string
 	case n == 1:
 		return checkRunList.CheckRuns[0], nil
 	case n > 1:
-		return nil, fmt.Errorf("multiple instances of `%s` check run found on %s/%s @ %s", p.Name, owner, repo, headSHA)
+		return nil, fmt.Errorf("multiple instances of `%s` check run found on %s/%s @ %s",
+			p.Name, owner, repo, headSHA)
 	default: // Should never happen
-		return nil, fmt.Errorf("negative number of instances (%d) of `%s` check run found on %s/%s @ %s", n, p.Name, owner, repo, headSHA)
+		return nil, fmt.Errorf("negative number of instances (%d) of `%s` check run found on %s/%s @ %s",
+			n, p.Name, owner, repo, headSHA)
 	}
 }
 
@@ -167,7 +169,7 @@ func (p PRPlugin) resetCheckRun(client *github.Client, owner, repo string, headS
 		},
 	)
 	if err != nil {
-		return checkRun, fmt.Errorf("unable to update check result: %w", err)
+		return checkRun, fmt.Errorf("unable to reset check run: %w", err)
 	}
 
 	p.debugf("update check API response: %+v", updateResp)
@@ -192,7 +194,7 @@ func (p PRPlugin) finishCheckRun(client *github.Client, owner, repo string, chec
 		},
 	})
 	if err != nil {
-		return fmt.Errorf("unable to update check result: %w", err)
+		return fmt.Errorf("unable to update check run with results: %w", err)
 	}
 
 	p.debugf("update check API response: %+v", updateResp)
@@ -222,7 +224,7 @@ func (p PRPlugin) duplicateCheckRun(client *github.Client, owner, repo, headSHA 
 		},
 	)
 	if err != nil {
-		return nil, fmt.Errorf("unable to submit check result: %w", err)
+		return nil, fmt.Errorf("unable to create duplicate check run: %w", err)
 	}
 
 	p.debugf("create check API response: %+v", res)
@@ -255,10 +257,8 @@ func (p PRPlugin) entrypoint(env *ActionsEnv) (err error) {
 
 // onOpen handles "open" actions
 func (p PRPlugin) onOpen(env *ActionsEnv) error {
-	headSHA := env.Event.GetPullRequest().GetHead().GetSHA()
-
 	// Create the check run
-	checkRun, err := p.createCheckRun(env.Client, env.Owner, env.Repo, headSHA)
+	checkRun, err := p.createCheckRun(env.Client, env.Owner, env.Repo, env.Event.GetPullRequest().GetHead().GetSHA())
 	if err != nil {
 		return err
 	}
@@ -269,10 +269,8 @@ func (p PRPlugin) onOpen(env *ActionsEnv) error {
 
 // onReopen handles "reopen" actions
 func (p PRPlugin) onReopen(env *ActionsEnv) error {
-	headSHA := env.Event.GetPullRequest().GetHead().GetSHA()
-
 	// Get the check run
-	checkRun, err := p.getCheckRun(env.Client, env.Owner, env.Repo, headSHA)
+	checkRun, err := p.getCheckRun(env.Client, env.Owner, env.Repo, env.Event.GetPullRequest().GetHead().GetSHA())
 	if err != nil {
 		return err
 	}
@@ -293,10 +291,8 @@ func (p PRPlugin) onReopen(env *ActionsEnv) error {
 
 // onEdit handles "edit" actions
 func (p PRPlugin) onEdit(env *ActionsEnv) error {
-	headSHA := env.Event.GetPullRequest().GetHead().GetSHA()
-
 	// Reset the check run
-	checkRun, err := p.resetCheckRun(env.Client, env.Owner, env.Repo, headSHA)
+	checkRun, err := p.resetCheckRun(env.Client, env.Owner, env.Repo, env.Event.GetPullRequest().GetHead().GetSHA())
 	if err != nil {
 		return err
 	}
@@ -307,10 +303,8 @@ func (p PRPlugin) onEdit(env *ActionsEnv) error {
 
 // onSync handles "synchronize" actions
 func (p PRPlugin) onSync(env *ActionsEnv) error {
-	before, after := env.Event.GetBefore(), env.Event.GetAfter()
-
 	// Get the check run
-	checkRun, err := p.getCheckRun(env.Client, env.Owner, env.Repo, before)
+	checkRun, err := p.getCheckRun(env.Client, env.Owner, env.Repo, env.Event.GetBefore())
 	if err != nil {
 		return err
 	}
@@ -318,11 +312,13 @@ func (p PRPlugin) onSync(env *ActionsEnv) error {
 	// Rerun the tests if they weren't finished
 	if !Finished.Equal(checkRun.GetStatus()) {
 		// Process the PR and submit the results
-		return p.processAndSubmit(env, checkRun)
+		if err = p.processAndSubmit(env, checkRun); err != nil {
+			return err
+		}
 	}
 
 	// Create a duplicate for the new commit
-	checkRun, err = p.duplicateCheckRun(env.Client, env.Owner, env.Repo, after, checkRun)
+	checkRun, err = p.duplicateCheckRun(env.Client, env.Owner, env.Repo, env.Event.GetAfter(), checkRun)
 	if err != nil {
 		return err
 	}
